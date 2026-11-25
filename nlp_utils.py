@@ -184,6 +184,55 @@ def topic_model(sentences: list[str], n_topics: int = 3, n_words: int = 6) -> pd
     return pd.DataFrame(rows)
 
 
+def analyze_all(
+    text: str, n_summary: int = 3, n_keywords: int = 15, n_topics: int = 3, n_clusters: int = 3
+) -> dict:
+    """Run every analysis on the text and return the results in one dict."""
+    sentences = split_sentences(text)
+    return {
+        "sentences": sentences,
+        "stats": text_stats(text),
+        "sentiment": sentiment(text),
+        "sent_sentiment": sentence_sentiment(sentences),
+        "keywords": tfidf_keywords(sentences, n_keywords),
+        "freq": word_frequencies(text),
+        "summary": extractive_summary(sentences, n_summary),
+        "topics": topic_model(sentences, n_topics) if sentences else pd.DataFrame(),
+        "clusters": cluster_sentences(sentences, n_clusters) if sentences else pd.DataFrame(),
+    }
+
+
+def analysis_digest(r: dict) -> str:
+    """Compact plain-text version of the results (LLM context and report body)."""
+    s = r["sentiment"]
+    stats = ", ".join(f"{k}: {v}" for k, v in r["stats"].items())
+    topics = "; ".join(f"{t['topic']}: {t['top words']}" for _, t in r["topics"].iterrows())
+    return "\n".join([
+        f"Stats: {stats}",
+        f"Overall sentiment (VADER): {s['label']} (compound {s['compound']:+.2f}, "
+        f"pos {s['pos']:.0%}, neu {s['neu']:.0%}, neg {s['neg']:.0%})",
+        "Top TF-IDF keywords: " + ", ".join(r["keywords"]["keyword"].head(10)),
+        f"LDA topics: {topics}",
+        "TextRank summary: " + " ".join(r["summary"]),
+    ])
+
+
+def build_report(r: dict, source: str) -> str:
+    """Markdown report of the analysis for download."""
+    lines = [f"# Text insights report\n\nSource: {source}\n", "## Statistics\n"]
+    lines += [f"- **{k}:** {v}" for k, v in r["stats"].items()]
+    s = r["sentiment"]
+    lines += [
+        "\n## Sentiment\n",
+        f"**{s['label']}** (compound {s['compound']:+.2f}): positive {s['pos']:.0%}, "
+        f"neutral {s['neu']:.0%}, negative {s['neg']:.0%}",
+        "\n## Summary\n", *[f"- {x}" for x in r["summary"]],
+        "\n## Keywords\n", ", ".join(r["keywords"]["keyword"]),
+        "\n## Topics\n", *[f"- **{t['topic']}:** {t['top words']}" for _, t in r["topics"].iterrows()],
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def cluster_sentences(sentences: list[str], n_clusters: int = 3) -> pd.DataFrame:
     """Group similar sentences with K-Means on TF-IDF vectors."""
     X = TfidfVectorizer(stop_words="english").fit_transform(sentences)
